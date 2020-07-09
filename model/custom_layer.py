@@ -8,14 +8,14 @@ tf.compat.v1.disable_eager_execution()
 
 class Discriminative(Layers.Layer):
     
-    def __init__(self, alpha, **kwargs):
+    def __init__(self, alpha, batch_size, k, **kwargs):
         super(Discriminative, self).__init__(**kwargs)
         self.alpha = alpha
+        self.batch_size = batch_size
+        self.k = k
               
     def call(self, inputs):
         original, hidden = inputs
-        self.batch_size = hidden.shape[1]
-        self.k = self.batch_size // 10
         
         ######################## Find Anchor Pairs ##################################
         """ Computes pairwise L2 distances between each elements in the original input.
@@ -25,8 +25,9 @@ class Discriminative(Layers.Layer):
                 distance_matrix, [m,m] matrix of pairwise distances as a tensor object
             """
         p = tf.expand_dims(original, 1) ### Expand on the columns
-        q = tf.expand_dims(original, 0) ### Expand on the rows
+        q = tf.expand_dims(original, 0) ### Expand on the rows       
         distance_matrix = K.sqrt(tf.reduce_sum(tf.math.squared_difference(p, q), 2))
+
           
         """ Computes anchor pairs and non-anchor paris based on distance matrix.
             Args:
@@ -34,8 +35,14 @@ class Discriminative(Layers.Layer):
             """
         idx = tf.argsort(distance_matrix, direction = 'ASCENDING') ## sort elements
         ranks = tf.argsort(idx, direction = 'ASCENDING') ## ranks
-        anchor_matrix = tf.cast(ranks <= self.k, dtype = tf.float32)
-        non_anchor_matrix = tf.cast(ranks > self.k, dtype = tf.float32)
+        anchor_matrix = tf.cast(ranks < self.k, dtype = tf.float32)
+        
+        ### Symmterise Anchor Matrix
+        anchor_matrix = anchor_matrix + tf.transpose(anchor_matrix)
+        anchor_matrix = tf.minimum(anchor_matrix, tf.ones_like(anchor_matrix))
+        
+        matrix_of_1s = tf.ones([self.batch_size, self.batch_size], dtype = tf.float32)
+        non_anchor_matrix = matrix_of_1s - anchor_matrix
         
         ######################## Compute Weighted L1 Norm #################################
         """Computes anchor pairs and non-anchor pairs based on distance matrix.
@@ -48,16 +55,15 @@ class Discriminative(Layers.Layer):
                 Lantent Loss, Weighted L1 Norm of the Consine Distance Matrix
             """ 
         ## Calculate Cosine Similarity Matrix C
-        similarity = tf.nn.l2_normalize(hidden, axis = 1) ## double check the normalisation
-        C = tf.matmul(similarity, tf.transpose(similarity))
-        C_abs = K.abs(C)
+        similarity = tf.nn.l2_normalize(hidden, axis = 1)
+        C = tf.matmul(similarity, tf.transpose(similarity))     
         
         ## Calculate Weights later to weigh anchor points and non-anchor points
-        self.Nw = (1 - self.alpha)/(self.batch_size * self.k)
-        self.Nb = 1/(self.batch_size** 2 - (self.batch_size * self.k))
+        Nw = (1 - self.alpha)/tf.reduce_sum(anchor_matrix)
+        Nb = 1/(tf.reduce_sum(non_anchor_matrix) - tf.reduce_sum(anchor_matrix))
         
-        ## Depends on Anchor Pairs of not
-        non_anchor = self.Nb * tf.multiply(C_abs, non_anchor_matrix)
-        anchor = self.Nw * tf.multiply(C, anchor_matrix)
+        ## Depends on Anchor Pairs of not, maximise the L1 sum of anchor matrix
+        non_anchor = Nb * tf.multiply(C, non_anchor_matrix)
+        anchor = Nw * tf.multiply(C, anchor_matrix)
         
         return [non_anchor, anchor]

@@ -12,7 +12,7 @@ ari = adjusted_rand_score
 
 def acc(y_true, y_pred):
     """
-    Calculate clustering accuracy. Require scikit-learn installed
+    Calculate clustering accuracy.
 
     # Arguments
         y: true labels, numpy.array with shape `(n_samples,)`
@@ -33,7 +33,7 @@ def acc(y_true, y_pred):
 
 
 
-def plot_score(data, labels, num_clusters = 10):
+def plot_score(data, labels, y_true, num_clusters = 10):
     
     df_embedded = TSNE(n_components = 2).fit_transform(data)
     fig, (ax1, ax2) = plt.subplots(1,2)
@@ -45,8 +45,6 @@ def plot_score(data, labels, num_clusters = 10):
         print("This time, no good.")
     else:
         silhouette_avg = silhouette_score(data, labels)
-        print("For n_clusters = ", num_clusters,
-              "The average silhouette score is :", silhouette_avg)
         sample_silhouette_values = silhouette_samples(data, labels)
         y_lower = 10
         for i in range(num_clusters):
